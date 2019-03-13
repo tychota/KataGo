@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.12.3)
-project(writedata)
+project(KataGo)
 
 set(CMAKE_CXX_STANDARD 14)
+set(BUILD_MCTS 1)
+set(USE_CUDA_BACKEND 1)
 
+set(BOOST_INDLUDEDIR "C:/Users/XJY/.nuget/packages/boost/1.68.0/lib/native/include/boost")
 include_directories(external)
 include_directories(external/tclap-1.2.1/include)
 
@@ -40,24 +43,6 @@ endif()
 
 #------------------------------------------------------------------------------------
 
-find_package(Git)
-set(GIT_HEADER_FILE_TEMPLATE_BARE program/gitinfotemplate.h)
-set(GIT_HEADER_FILE_ALWAYS_UPDATED_BARE program/gitinfoupdated.h)
-set(GIT_HEADER_FILE_BARE program/gitinfo.h)
-set(GIT_HEADER_FILE_TEMPLATE ${CMAKE_SOURCE_DIR}/${GIT_HEADER_FILE_TEMPLATE_BARE})
-set(GIT_HEADER_FILE_ALWAYS_UPDATED ${CMAKE_BINARY_DIR}/${GIT_HEADER_FILE_ALWAYS_UPDATED_BARE})
-set(GIT_HEADER_FILE ${CMAKE_BINARY_DIR}/${GIT_HEADER_FILE_BARE})
-
-add_custom_command(
-  OUTPUT ${GIT_HEADER_FILE_ALWAYS_UPDATED}
-  COMMAND ${CMAKE_COMMAND} -E copy ${GIT_HEADER_FILE_TEMPLATE} ${GIT_HEADER_FILE_ALWAYS_UPDATED}
-  COMMAND ${GIT_EXECUTABLE} describe --match=DummyTagNotExisting --always --abbrev=40 --dirty >> ${GIT_HEADER_FILE_ALWAYS_UPDATED}
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GIT_HEADER_FILE_ALWAYS_UPDATED} ${GIT_HEADER_FILE}
-  COMMAND ${CMAKE_COMMAND} -E remove ${GIT_HEADER_FILE_ALWAYS_UPDATED}
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  VERBATIM
-  )
-
 #------------------------------------------------------------------------------------
 
 if(USE_TCMALLOC)
@@ -84,7 +69,7 @@ if(BUILD_WRITE)
     dataio/datapool.cpp
     dataio/lzparse.cpp
     dataio/sgf.cpp
-    ${GIT_HEADER_FILE_ALWAYS_UPDATED}
+    program/gitinfoupdated.h
     write.cpp
     )
 
@@ -138,7 +123,7 @@ if(BUILD_MCTS)
     search/distributiontable.cpp
     program/setup.cpp
     program/play.cpp
-    ${GIT_HEADER_FILE_ALWAYS_UPDATED}
+	program/gitinfoupdated.h
     tests/testboardarea.cpp
     tests/testboardbasic.cpp
     tests/testrules.cpp
@@ -163,22 +148,24 @@ if(BUILD_MCTS)
   if(USE_CUDA_BACKEND)
     add_definitions(-DUSE_CUDA_BACKEND)
     find_package(CUDA REQUIRED)
-    find_library(CUDNN_LIBRARY libcudnn.so PATHS /usr/local/cuda/lib64 /opt/cuda/lib64)
+    find_library(CUDNN_LIBRARY cudnn.lib E:/CUDA/lib/x64)
     include_directories(SYSTEM ${CUDA_INCLUDE_DIRS}) #SYSTEM is for suppressing some compiler warnings in thrust libraries
     target_link_libraries(main ${CUDNN_LIBRARY} ${CUDA_CUBLAS_LIBRARIES} ${CUDA_LIBRARIES})
   endif()
 
-  find_package(ZLIB REQUIRED)
-  if(ZLIB_FOUND)
-    include_directories(${ZLIB_INCLUDE_DIRS})
-    target_link_libraries(main ${ZLIB_LIBRARIES})
-  endif(ZLIB_FOUND)
+  include_directories("C:/Users/XJY/.nuget/packages/boost/1.68.0/lib/native/include")
+  #find_package(ZLIB REQUIRED)
+  #if(ZLIB_FOUND)
+    include_directories("C:/Users/XJY/.nuget/packages/zlib/1.2.8.1/build/native/include")
+    target_link_libraries(main C:/Users/XJY/.nuget/packages/zlib/1.2.8.1/build/native/lib/v110/x64/Release/static/cdecl/zlib.lib)
+  #endif(ZLIB_FOUND)
 
-  find_library(LIBZIP_LIBRARY NAMES zip)
-  target_link_libraries(main ${LIBZIP_LIBRARY})
+  #find_library(LIBZIP_LIBRARY NAMES zip)
+  include_directories("C:/Users/XJY/.nuget/packages/libzip/1.1.2.7/build/native/include")
+  target_link_libraries(main "C:/Users/XJY/.nuget/packages/libzip/1.1.2.7/build/native/lib/x64/v140/Release/zip.lib")
 
-  find_package(Boost COMPONENTS system filesystem REQUIRED)
-  target_link_libraries(main ${Boost_FILESYSTEM_LIBRARY} ${Boost_SYSTEM_LIBRARY})
+  #find_package(Boost COMPONENTS system filesystem REQUIRED)
+  target_link_libraries(main "C:/Users/XJY/.nuget/packages/boost_filesystem-vc141/1.68.0/lib/native/libboost_filesystem-vc141-mt-x64-1_68.lib" "C:/Users/XJY/.nuget/packages/boost_system-vc141/1.68.0/lib/native/libboost_system-vc141-mt-x64-1_68.lib")
 
   if(USE_TCMALLOC)
     target_link_libraries(main ${TCMALLOC_LIB})
