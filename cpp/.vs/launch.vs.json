@@ -6,7 +6,9 @@
       "type": "default",
       "project": "CMakeLists.txt",
       "projectTarget": "main.exe",
-      "args": [ " gtp -model model.txt -config configs/gtp_example.cfg"],
+      "args": [
+        " gtp -model 15x192.txt -config configs/gtp_example.cfg"
+      ],
       "name": "main.exe"
     }
   ]
