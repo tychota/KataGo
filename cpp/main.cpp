@@ -17,7 +17,7 @@ static void printHelp() {
   cout << "runsearchtestsv3" << endl;
   cout << "runselfplayinittests" << endl;
   cout << "lzcost" << endl;
-  cout << "writeSearchValueTimeseries" << endl;
+  cout << "demoplay" << endl;
   cout << "sandbox" << endl;
   cout << "version" << endl;
 }
@@ -57,8 +57,8 @@ int main(int argc, const char* argv[]) {
     return MainCmds::runselfplayinittests(argc-1,&argv[1]);
   else if(cmdArg == "lzcost")
     return MainCmds::lzcost(argc-1,&argv[1]);
-  else if(cmdArg == "writeSearchValueTimeseries")
-    return MainCmds::writeSearchValueTimeseries(argc-1,&argv[1]);
+  else if(cmdArg == "demoplay")
+    return MainCmds::demoplay(argc-1,&argv[1]);
   else if(cmdArg == "sandbox")
     return MainCmds::sandbox();
   else if(cmdArg == "version") {

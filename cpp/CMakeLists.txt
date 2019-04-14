@@ -177,6 +177,7 @@ endif()
 
 #------------------------------------------------------------------------------------
 
+# add_definitions(-DNDEBUG)
 
 if(CMAKE_COMPILER_IS_GNUCC)
   if(USE_TCMALLOC)

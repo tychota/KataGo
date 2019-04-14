@@ -240,6 +240,15 @@ int MainCmds::gatekeeper(int argc, const char* const* argv) {
     sgfOutputDir = sgfOutputDirArg.getValue();
     acceptedModelsDir = acceptedModelsDirArg.getValue();
     rejectedModelsDir = rejectedModelsDirArg.getValue();
+
+    auto checkDirNonEmpty = [](const char* flag, const string& s) {
+      if(s.length() <= 0)
+        throw StringError("Empty directory specified for " + string(flag));
+    };
+    checkDirNonEmpty("test-models-dir",testModelsDir);
+    checkDirNonEmpty("sgf-output-dir",sgfOutputDir);
+    checkDirNonEmpty("accepted-models-dir",acceptedModelsDir);
+    checkDirNonEmpty("rejected-models-dir",rejectedModelsDir);
   }
   catch (TCLAP::ArgException &e) {
     cerr << "Error: " << e.error() << " for argument " << e.argId() << endl;
@@ -347,7 +356,8 @@ int MainCmds::gatekeeper(int argc, const char* const* argv) {
 
     NNEvaluator* testNNEval;
     {
-      vector<NNEvaluator*> nnEvals = Setup::initializeNNEvaluators({testModelName},{testModelFile},cfg,logger,rand,maxConcurrentEvals,debugSkipNeuralNetDefaultTest);
+      vector<NNEvaluator*> nnEvals =
+        Setup::initializeNNEvaluators({testModelName},{testModelFile},cfg,logger,rand,maxConcurrentEvals,debugSkipNeuralNetDefaultTest,false,NNPos::MAX_BOARD_LEN);
       assert(nnEvals.size() == 1);
       logger.write("Loaded candidate neural net " + testModelName + " from: " + testModelFile);
       testNNEval = nnEvals[0];
@@ -357,15 +367,14 @@ int MainCmds::gatekeeper(int argc, const char* const* argv) {
 
     NNEvaluator* acceptedNNEval;
     {
-      vector<NNEvaluator*> nnEvals = Setup::initializeNNEvaluators({acceptedModelName},{acceptedModelFile},cfg,logger,rand,maxConcurrentEvals,debugSkipNeuralNetDefaultAccepted);
+      vector<NNEvaluator*> nnEvals =
+        Setup::initializeNNEvaluators({acceptedModelName},{acceptedModelFile},cfg,logger,rand,maxConcurrentEvals,debugSkipNeuralNetDefaultAccepted,false,NNPos::MAX_BOARD_LEN);
       assert(nnEvals.size() == 1);
       logger.write("Loaded accepted neural net " + acceptedModelName + " from: " + acceptedModelFile);
       acceptedNNEval = nnEvals[0];
     }
 
     string sgfOutputDirThisModel = sgfOutputDir + "/" + testModelName;
-    assert(sgfOutputDir != string());
-
     MakeDir::make(sgfOutputDirThisModel);
     {
       ofstream out(sgfOutputDirThisModel + "/" + "gatekeeper-" + Global::uint64ToHexString(rand.nextUInt64()) + ".cfg");
@@ -377,14 +386,7 @@ int MainCmds::gatekeeper(int argc, const char* const* argv) {
     NetAndStuff* newNet = new NetAndStuff(cfg, acceptedModelName, testModelName, testModelDir, acceptedNNEval, testNNEval, sgfOut);
 
     //Check for unused config keys
-    {
-      vector<string> unusedKeys = cfg.unusedKeys();
-      for(size_t i = 0; i<unusedKeys.size(); i++) {
-        string msg = "WARNING: Unused key '" + unusedKeys[i] + "' in " + cfg.getFileName();
-        logger.write(msg);
-        cerr << msg << endl;
-      }
-    }
+    cfg.warnUnusedKeys(cerr,&logger);
 
     return newNet;
   };

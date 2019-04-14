@@ -106,30 +106,47 @@ int MainCmds::gtp(int argc, const char* const* argv) {
     params = paramss[0];
   }
 
-  string searchRandSeed;
-  if(cfg.contains("searchRandSeed"))
-    searchRandSeed = cfg.getString("searchRandSeed");
-  else
-    searchRandSeed = Global::uint64ToString(seedRand.nextUInt64());
-
   const bool ponderingEnabled = cfg.getBool("ponderingEnabled");
   const bool cleanupBeforePass = cfg.contains("cleanupBeforePass") ? cfg.getBool("cleanupBeforePass") : false;
   const bool allowResignation = cfg.contains("allowResignation") ? cfg.getBool("allowResignation") : false;
   const double resignThreshold = cfg.contains("allowResignation") ? cfg.getDouble("resignThreshold",-1.0,0.0) : -1.0; //Threshold on [-1,1], regardless of winLossUtilityFactor
   const int whiteBonusPerHandicapStone = cfg.contains("whiteBonusPerHandicapStone") ? cfg.getInt("whiteBonusPerHandicapStone",0,1) : 0;
-  
-  NNEvaluator* nnEval;
-  {
-    Setup::initializeSession(cfg);
+
+  NNEvaluator* nnEval = NULL;
+  AsyncBot* bot = NULL;
+
+  Setup::initializeSession(cfg);
+
+  auto maybeInitializeNNEvalAndAsyncBot = [&nnEval,&bot,&cfg,&params,&nnModelFile,&logger,&seedRand](int boardSize) {
+    if(nnEval != NULL && boardSize == nnEval->getPosLen())
+      return;
+    if(nnEval != NULL) {
+      assert(bot != NULL);
+      bot->stopAndWait();
+      delete bot;
+      delete nnEval;
+      bot = NULL;
+      nnEval = NULL;
+      logger.write("Cleaned up old neural net and bot");
+    }
+
     int maxConcurrentEvals = params.numThreads * 2 + 16; // * 2 + 16 just to give plenty of headroom
-    vector<NNEvaluator*> nnEvals = Setup::initializeNNEvaluators({nnModelFile},{nnModelFile},cfg,logger,seedRand,maxConcurrentEvals,false);
+    vector<NNEvaluator*> nnEvals = Setup::initializeNNEvaluators({nnModelFile},{nnModelFile},cfg,logger,seedRand,maxConcurrentEvals,false,false,boardSize);
     assert(nnEvals.size() == 1);
     nnEval = nnEvals[0];
-  }
-  logger.write("Loaded neural net");
+    logger.write("Loaded neural net with posLen " + Global::intToString(nnEval->getPosLen()));
 
+    string searchRandSeed;
+    if(cfg.contains("searchRandSeed"))
+      searchRandSeed = cfg.getString("searchRandSeed");
+    else
+      searchRandSeed = Global::uint64ToString(seedRand.nextUInt64());
 
-  AsyncBot* bot = new AsyncBot(params, nnEval, &logger, searchRandSeed);
+    bot = new AsyncBot(params, nnEval, &logger, searchRandSeed);
+  };
+
+  maybeInitializeNNEvalAndAsyncBot(19);
+
   {
     Board board(19,19);
     Player pla = P_BLACK;
@@ -138,29 +155,23 @@ int MainCmds::gtp(int argc, const char* const* argv) {
   }
 
   TimeControls bTimeControls;
-  TimeControls wTimeControls;  
+  TimeControls wTimeControls;
 
-  vector<double> recentWinValues;
+  vector<double> recentWinLossValues;
   const double searchFactorWhenWinning = cfg.contains("searchFactorWhenWinning") ? cfg.getDouble("searchFactorWhenWinning",0.01,1.0) : 1.0;
   const double searchFactorWhenWinningThreshold = cfg.contains("searchFactorWhenWinningThreshold") ? cfg.getDouble("searchFactorWhenWinningThreshold",0.0,1.0) : 1.0;
-  double lastSearchFactor = 1.0; 
-  
-  {
-    vector<string> unusedKeys = cfg.unusedKeys();
-    for(size_t i = 0; i<unusedKeys.size(); i++) {
-      string msg = "WARNING: Unused key '" + unusedKeys[i] + "' in " + configFile;
-      logger.write(msg);
-      cerr << msg << endl;
-    }
-  }
+  double lastSearchFactor = 1.0;
+
+  //Check for unused config keys
+  cfg.warnUnusedKeys(cerr,&logger);
 
   //Komi without whiteBonusPerHandicapStone hack
   float unhackedKomi = bot->getRootHist().rules.komi;
-  auto updateKomiIfNew = [&bot,&unhackedKomi,&whiteBonusPerHandicapStone,&recentWinValues]() {
+  auto updateKomiIfNew = [&bot,&unhackedKomi,&whiteBonusPerHandicapStone,&recentWinLossValues]() {
     float newKomi = unhackedKomi;
     newKomi += numHandicapStones(bot->getRootHist()) * whiteBonusPerHandicapStone;
     if(newKomi != bot->getRootHist().rules.komi)
-      recentWinValues.clear();
+      recentWinLossValues.clear();
     bot->setKomiIfNew(newKomi);
   };
 
@@ -266,12 +277,12 @@ int MainCmds::gtp(int argc, const char* const* argv) {
       bot->stopAndWait();
       cout << endl;
     }
-    
+
     bool responseIsError = false;
     bool shouldQuitAfterResponse = false;
     bool maybeStartPondering = false;
     string response;
-    
+
     if(command == "protocol_version") {
       response = "2";
     }
@@ -323,13 +334,18 @@ int MainCmds::gtp(int argc, const char* const* argv) {
         responseIsError = true;
         response = "unacceptable size";
       }
+      else if(newBSize > Board::MAX_LEN) {
+        responseIsError = true;
+        response = Global::strprintf("unacceptable size (Board::MAX_LEN is %d, consider increasing and recompiling)",(int)Board::MAX_LEN);
+      }
       else {
+        maybeInitializeNNEvalAndAsyncBot(newBSize);
         Board board(newBSize,newBSize);
         Player pla = P_BLACK;
         BoardHistory hist(board,pla,bot->getRootHist().rules,0);
         bot->setPosition(pla,board,hist);
         updateKomiIfNew();
-        recentWinValues.clear();
+        recentWinLossValues.clear();
       }
     }
 
@@ -341,7 +357,7 @@ int MainCmds::gtp(int argc, const char* const* argv) {
       BoardHistory hist(board,pla,bot->getRootHist().rules,0);
       bot->setPosition(pla,board,hist);
       updateKomiIfNew();
-      recentWinValues.clear();
+      recentWinLossValues.clear();
     }
 
     else if(command == "komi") {
@@ -355,7 +371,7 @@ int MainCmds::gtp(int argc, const char* const* argv) {
         responseIsError = true;
         response = "unacceptable komi";
       }
-      else if(newKomi * 2 != (int)(newKomi * 2)) {
+      else if(!Rules::komiIsIntOrHalfInt(newKomi)) {
         responseIsError = true;
         response = "komi must be an integer or half-integer";
       }
@@ -427,7 +443,7 @@ int MainCmds::gtp(int argc, const char* const* argv) {
         wTimeControls = tc;
       }
     }
-    
+
     else if(command == "time_left") {
       Player pla;
       double time;
@@ -514,23 +530,9 @@ int MainCmds::gtp(int argc, const char* const* argv) {
         TimeControls tc = pla == P_BLACK ? bTimeControls : wTimeControls;
 
         //Play faster when winning
-        double searchFactor = 1.0;
-        if(recentWinValues.size() >= 3 && params.winLossUtilityFactor - searchFactorWhenWinningThreshold > 1e-10) {
-          double recentLeastWinning = pla == P_BLACK ? -params.winLossUtilityFactor : params.winLossUtilityFactor;
-          for(int i = recentWinValues.size()-3; i < recentWinValues.size(); i++) {
-            if(pla == P_BLACK && recentWinValues[i] > recentLeastWinning)
-              recentLeastWinning = recentWinValues[i];
-            if(pla == P_WHITE && recentWinValues[i] < recentLeastWinning)
-              recentLeastWinning = recentWinValues[i];
-          }
-          double excessWinning = pla == P_BLACK ? -searchFactorWhenWinningThreshold - recentLeastWinning : recentLeastWinning - searchFactorWhenWinningThreshold;
-          if(excessWinning > 0) {
-            double lambda = excessWinning / (params.winLossUtilityFactor - searchFactorWhenWinningThreshold);
-            searchFactor = 1.0 + lambda * (searchFactorWhenWinning - 1.0); 
-          }
-        }
+        double searchFactor = Play::getSearchFactor(searchFactorWhenWinningThreshold,searchFactorWhenWinning,params,recentWinLossValues,pla);
         lastSearchFactor = searchFactor;
-        
+
         Loc moveLoc = bot->genMoveSynchronous(pla,tc,searchFactor);
         bool isLegal = bot->isLegal(moveLoc,pla);
         if(moveLoc == Board::NULL_LOC || !isLegal) {
@@ -570,26 +572,17 @@ int MainCmds::gtp(int argc, const char* const* argv) {
         double winLossValue;
         double expectedScore;
         {
-          double winValue;
-          double lossValue;
-          double noResultValue;
-          double staticScoreValue;
-          double dynamicScoreValue;
-          bool success = bot->getSearch()->getRootValues(winValue,lossValue,noResultValue,staticScoreValue,dynamicScoreValue,expectedScore);
-          assert(success);
-
-          winLossValue = winValue - lossValue;
-          assert(winLossValue > -1.01 && winLossValue < 1.01); //Sanity check, but allow generously for float imprecision
-          if(winLossValue > 1.0) winLossValue = 1.0;
-          if(winLossValue < -1.0) winLossValue = -1.0;
+          ReportedSearchValues values = bot->getSearch()->getRootValuesAssertSuccess();
+          winLossValue = values.winLossValue;
+          expectedScore = values.expectedScore;
         }
 
-        recentWinValues.push_back(winLossValue);
-        
+        recentWinLossValues.push_back(winLossValue);
+
         bool resigned = false;
         if(allowResignation) {
           const BoardHistory hist = bot->getRootHist();
-          const Board initialBoard = hist.initialBoard; 
+          const Board initialBoard = hist.initialBoard;
 
           //Assume an advantage of 15 * number of black stones beyond the one black normally gets on the first move and komi
           int extraBlackStones = numHandicapStones(hist);
@@ -597,12 +590,12 @@ int MainCmds::gtp(int argc, const char* const* argv) {
             extraBlackStones -= 1;
           double handicapBlackAdvantage = 15.0 * extraBlackStones + (7.5 - hist.rules.komi);
 
-          int minTurnForResignation = 0; 
+          int minTurnForResignation = 0;
           double noResignationWhenWhiteScoreAbove = initialBoard.x_size * initialBoard.y_size;
           if(handicapBlackAdvantage > 2.0 && pla == P_WHITE) {
             //Play at least some moves no matter what
             minTurnForResignation = 1 + initialBoard.x_size * initialBoard.y_size / 6;
-            
+
             //In a handicap game, also only resign if the expected score difference is well behind schedule assuming
             //that we're supposed to catch up over many moves.
             double numTurnsToCatchUp = 0.60 * initialBoard.x_size * initialBoard.y_size - minTurnForResignation;
@@ -613,14 +606,14 @@ int MainCmds::gtp(int argc, const char* const* argv) {
               numTurnsSpent = 0.0;
             if(numTurnsSpent > numTurnsToCatchUp)
               numTurnsSpent = numTurnsToCatchUp;
-            
+
             double resignScore = -handicapBlackAdvantage * ((numTurnsToCatchUp - numTurnsSpent) / numTurnsToCatchUp);
-            resignScore -= 5.0; //Always require at least a 5 point buffer 
+            resignScore -= 5.0; //Always require at least a 5 point buffer
             resignScore -= handicapBlackAdvantage * 0.15; //And also require a 15% of the initial handicap
 
             noResignationWhenWhiteScoreAbove = resignScore;
           }
-          
+
           Player resignPlayerThisTurn = C_EMPTY;
           if(winLossValue < resignThreshold)
             resignPlayerThisTurn = P_WHITE;
@@ -656,9 +649,10 @@ int MainCmds::gtp(int argc, const char* const* argv) {
           logger.write(sout.str());
         }
 
-        if(!resigned) {
+        if(!resigned && moveLoc != Board::NULL_LOC && isLegal) {
           bool suc = bot->makeMove(moveLoc,pla);
           assert(suc);
+          (void)suc; //Avoid warning when asserts are off
           maybeStartPondering = true;
         }
 
@@ -771,7 +765,7 @@ int MainCmds::gtp(int argc, const char* const* argv) {
       else if(hist.winner == C_WHITE)
         response = "W+" + Global::strprintf("%.1f",hist.finalWhiteMinusBlackScore);
       else
-        assert(false);
+        ASSERT_UNREACHABLE;
     }
 
     else if(command == "final_status_list") {
@@ -839,15 +833,15 @@ int MainCmds::gtp(int argc, const char* const* argv) {
 
     else if(command == "lz-analyze" || command == "kata-analyze") {
       int numArgsParsed = 0;
-    
+
       Player pla = bot->getRootPla();
       double lzAnalyzeInterval = 1e30;
       int minMoves = 0;
       bool parseFailed = false;
-      
+
       if(pieces.size() > numArgsParsed && tryParsePlayer(pieces[numArgsParsed],pla))
         numArgsParsed += 1;
-      
+
       if(pieces.size() > numArgsParsed &&
          Global::tryStringToDouble(pieces[numArgsParsed],lzAnalyzeInterval) &&
          !isnan(lzAnalyzeInterval) && lzAnalyzeInterval >= 0 && lzAnalyzeInterval < 1e20)
@@ -867,12 +861,12 @@ int MainCmds::gtp(int argc, const char* const* argv) {
             break;
           }
         }
-        
+
         //Parse it but ignore it since we don't support excluding moves right now
         else if(pieces[numArgsParsed] == "avoid" || pieces[numArgsParsed] == "allow") {
           numArgsParsed += 1;
           for(int r = 0; r<3; r++) {
-            if(pieces.size() > numArgsParsed) 
+            if(pieces.size() > numArgsParsed)
               numArgsParsed += 1;
             else
               parseFailed = true;
@@ -899,7 +893,7 @@ int MainCmds::gtp(int argc, const char* const* argv) {
         parseFailed = true;
         break;
       }
-      
+
       if(parseFailed) {
         responseIsError = true;
         response = "Could not parse lz-analyze arguments or arguments out of range: '" + Global::concat(pieces," ") + "'";
@@ -907,11 +901,12 @@ int MainCmds::gtp(int argc, const char* const* argv) {
       else {
         lzAnalyzeInterval = lzAnalyzeInterval * 0.01; //Convert from centiseconds to seconds
 
+        static const int analysisPVLen = 9;
         std::function<void(Search* search)> callback;
         if(command == "lz-analyze") {
-          callback = [minMoves](Search* search) {            
+          callback = [minMoves,pla](Search* search) {
             vector<AnalysisData> buf;
-            search->getAnalysisData(buf,minMoves);
+            search->getAnalysisData(buf,minMoves,false,analysisPVLen);
             if(buf.size() <= 0)
               return;
 
@@ -920,10 +915,12 @@ int MainCmds::gtp(int argc, const char* const* argv) {
               if(i > 0)
                 cout << " ";
               const AnalysisData& data = buf[i];
+              double winrate = 0.5 * (1.0 + data.winLossValue);
+              winrate = pla == P_BLACK ? -winrate : winrate;
               cout << "info";
               cout << " move " << Location::toString(data.move,board);
               cout << " visits " << data.numVisits;
-              cout << " winrate " << round((0.5 * (1.0 + data.winLossValue)) * 10000.0);
+              cout << " winrate " << round(winrate * 10000.0);
               cout << " prior " << round(data.policyPrior * 10000.0);
               cout << " order " << data.order;
               cout << " pv";
@@ -934,22 +931,24 @@ int MainCmds::gtp(int argc, const char* const* argv) {
           };
         }
         else if(command == "kata-analyze") {
-          callback = [minMoves](Search* search) {            
+          callback = [minMoves,pla](Search* search) {
             vector<AnalysisData> buf;
-            search->getAnalysisData(buf,minMoves);
+            search->getAnalysisData(buf,minMoves,false,analysisPVLen);
             if(buf.size() <= 0)
               return;
-            
+
             const Board board = search->getRootBoard();
             for(int i = 0; i<buf.size(); i++) {
               if(i > 0)
                 cout << " ";
               const AnalysisData& data = buf[i];
+              double winrate = 0.5 * (1.0 + data.winLossValue);
+              winrate = pla == P_BLACK ? -winrate : winrate;
               cout << "info";
               cout << " move " << Location::toString(data.move,board);
               cout << " visits " << data.numVisits;
               cout << " utility " << data.utility;
-              cout << " winrate " << (0.5 * (1.0 + data.winLossValue));
+              cout << " winrate " << winrate;
               cout << " scoreMean " << data.scoreMean;
               cout << " scoreStdev " << data.scoreStdev;
               cout << " prior " << data.policyPrior;
@@ -960,17 +959,17 @@ int MainCmds::gtp(int argc, const char* const* argv) {
             }
             cout << endl;
           };
-                 
+
         }
         else
-          assert(false);
-          
+          ASSERT_UNREACHABLE;
+
         double searchFactor = 1e40; //go basically forever
         bot->analyze(pla, searchFactor, lzAnalyzeInterval, callback);
         currentlyAnalyzing = true;
       }
     }
-    
+
     else if(command == "stop") {
       //Stop any ongoing ponder or analysis
       bot->stopAndWait();
@@ -997,7 +996,7 @@ int MainCmds::gtp(int argc, const char* const* argv) {
 
     //GTP needs extra newline, except if currently analyzing, defer the newline until we actually stop analysis
     if(!currentlyAnalyzing)
-      cout << endl; 
+      cout << endl;
 
     if(logAllGTPCommunication)
       logger.write(response);

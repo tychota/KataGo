@@ -180,6 +180,13 @@ int MainCmds::selfplay(int argc, const char* const* argv) {
     inputsVersion = inputsVersionArg.getValue();
     modelsDir = modelsDirArg.getValue();
     outputDir = outputDirArg.getValue();
+
+    auto checkDirNonEmpty = [](const char* flag, const string& s) {
+      if(s.length() <= 0)
+        throw StringError("Empty directory specified for " + string(flag));
+    };
+    checkDirNonEmpty("models-dir",modelsDir);
+    checkDirNonEmpty("output-dir",outputDir);
   }
   catch (TCLAP::ArgException &e) {
     cerr << "Error: " << e.error() << " for argument " << e.argId() << endl;
@@ -278,6 +285,7 @@ int MainCmds::selfplay(int argc, const char* const* argv) {
       }
     }
     assert(found);
+    (void)found; //Avoid warning when asserts are disabled
     lock.unlock();
 
     //Do logging and cleanup while unlocked, so that our freeing and stopping of this neural net doesn't
@@ -325,7 +333,7 @@ int MainCmds::selfplay(int argc, const char* const* argv) {
     int maxConcurrentEvals = cfg.getInt("numSearchThreads") * numGameThreads * 2 + 16;
 
     Rand rand;
-    vector<NNEvaluator*> nnEvals = Setup::initializeNNEvaluators({modelName},{modelFile},cfg,logger,rand,maxConcurrentEvals,debugSkipNeuralNetDefault);
+    vector<NNEvaluator*> nnEvals = Setup::initializeNNEvaluators({modelName},{modelFile},cfg,logger,rand,maxConcurrentEvals,debugSkipNeuralNetDefault,false,NNPos::MAX_BOARD_LEN);
     assert(nnEvals.size() == 1);
     NNEvaluator* nnEval = nnEvals[0];
     logger.write("Loaded latest neural net " + modelName + " from: " + modelFile);
@@ -334,7 +342,6 @@ int MainCmds::selfplay(int argc, const char* const* argv) {
     string sgfOutputDir = modelOutputDir + "/sgfs";
     string tdataOutputDir = modelOutputDir + "/tdata";
     string vdataOutputDir = modelOutputDir + "/vdata";
-    assert(outputDir != string());
 
     //Try repeatedly to make directories, in case the filesystem is unhappy with us as we try to make the same dirs as another process.
     //Wait a random amount of time in between each failure.
@@ -397,14 +404,7 @@ int MainCmds::selfplay(int argc, const char* const* argv) {
   }
 
   //Check for unused config keys
-  {
-    vector<string> unusedKeys = cfg.unusedKeys();
-    for(size_t i = 0; i<unusedKeys.size(); i++) {
-      string msg = "WARNING: Unused key '" + unusedKeys[i] + "' in " + configFile;
-      logger.write(msg);
-      cerr << msg << endl;
-    }
-  }
+  cfg.warnUnusedKeys(cerr,&logger);
 
   auto gameLoop = [
     &gameRunner,

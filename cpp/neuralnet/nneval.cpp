@@ -54,6 +54,7 @@ NNEvaluator::NNEvaluator(
   int nnCacheSizePowerOfTwo,
   int nnMutexPoolSizePowerofTwo,
   bool skipNeuralNet,
+  bool alwaysOwnerMap,
   float nnPolicyTemp
 )
   :modelName(mName),
@@ -65,6 +66,7 @@ NNEvaluator::NNEvaluator(
    loadedModel(NULL),
    nnCacheTable(NULL),
    debugSkipNeuralNet(skipNeuralNet),
+   alwaysIncludeOwnerMap(alwaysOwnerMap),
    nnPolicyInvTemperature(1.0/nnPolicyTemp),
    serverThreads(),
    serverWaitingForBatchStart(),
@@ -425,8 +427,10 @@ void NNEvaluator::evaluate(
   else if(inputsVersion == 5)
     nnHash = NNInputs::getHashV5(board, history, nextPlayer, drawEquivalentWinsForWhite);
   else
-    assert(false);
+    ASSERT_UNREACHABLE;
 
+  includeOwnerMap |= alwaysIncludeOwnerMap;
+  
   bool hadResultWithoutOwnerMap = false;
   shared_ptr<NNOutput> resultWithoutOwnerMap;
   if(nnCacheTable != NULL && !skipCache && nnCacheTable->get(nnHash,buf.result)) {
@@ -498,7 +502,7 @@ void NNEvaluator::evaluate(
       NNInputs::fillRowV5(board, history, nextPlayer, drawEquivalentWinsForWhite, posLen, inputsUseNHWC, buf.rowBin, buf.rowGlobal);
     }
     else
-      assert(false);
+      ASSERT_UNREACHABLE;
   }
 
   unique_lock<std::mutex> lock(bufferMutex);
@@ -519,6 +523,7 @@ void NNEvaluator::evaluate(
   //This should only fire if we have more than maxConcurrentEvals evaluating, such that they wrap the
   //circular buffer.
   assert(!overlooped);
+  (void)overlooped; //Avoid unused variable when asserts disabled
 
   unique_lock<std::mutex> resultLock(buf.resultMutex);
   while(!buf.hasResult)

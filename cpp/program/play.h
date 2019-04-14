@@ -224,6 +224,34 @@ namespace Play {
     Search* bot,
     Logger& logger
   );
+
+  Loc chooseRandomPolicyMove(
+    const NNOutput* nnOutput,
+    const Board& board,
+    const BoardHistory& hist,
+    Player pla,
+    Rand& gameRand,
+    double temperature,
+    bool allowPass,
+    Loc banMove
+  );
+
+  void adjustKomiToEven(
+    Search* bot,
+    const Board& board,
+    BoardHistory& hist,
+    Player pla,
+    int64_t numVisits,
+    Logger& logger
+  );
+
+  double getSearchFactor(
+    double searchFactorWhenWinningThreshold,
+    double searchFactorWhenWinning,
+    const SearchParams& params,
+    const vector<double>& recentWinLossValues,
+    Player pla
+  );
 }
 
 

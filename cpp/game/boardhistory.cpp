@@ -408,7 +408,7 @@ void BoardHistory::endAndScoreGameNow(const Board& board, Color area[Board::MAX_
   else if(rules.scoringRule == Rules::SCORING_TERRITORY)
     boardScore = countTerritoryAreaScoreWhiteMinusBlack(board,area);
   else
-    assert(false);
+    ASSERT_UNREACHABLE;
 
   finalWhiteMinusBlackScore = boardScore + whiteBonusScore + rules.komi;
   if(finalWhiteMinusBlackScore > 0.0f)
@@ -484,7 +484,7 @@ void BoardHistory::setKoProhibited(Player pla, Loc loc, bool b) {
     }
   }
   else
-    assert(false);
+    ASSERT_UNREACHABLE;
 }
 
 bool BoardHistory::isLegal(const Board& board, Loc moveLoc, Player movePla) const {
@@ -529,7 +529,7 @@ int BoardHistory::newConsecutiveEndingPasses(Loc moveLoc, Loc koLocBeforeMove) c
       newConsecutiveEndingPasses = 0;
       break;
     default:
-      assert(false);
+      ASSERT_UNREACHABLE;
       break;
     }
   }
@@ -678,7 +678,7 @@ void BoardHistory::makeBoardMoveAssumeLegal(Board& board, Loc moveLoc, Player mo
     else if(movePla == P_WHITE)
       hashesAfterWhitePass.push_back(koHashAfterThisMove);
     else
-      assert(false);
+      ASSERT_UNREACHABLE;
   }
 
   //Territory scoring - chill 1 point per move in main phase and first encore
@@ -688,7 +688,7 @@ void BoardHistory::makeBoardMoveAssumeLegal(Board& board, Loc moveLoc, Player mo
     else if(movePla == P_WHITE)
       whiteBonusScore -= 1;
     else
-      assert(false);
+      ASSERT_UNREACHABLE;
   }
 
   //Phase transitions and game end
@@ -720,7 +720,7 @@ void BoardHistory::makeBoardMoveAssumeLegal(Board& board, Loc moveLoc, Player mo
       }
     }
     else
-      assert(false);
+      ASSERT_UNREACHABLE;
   }
 
   //Break long cycles with no-result
@@ -738,7 +738,7 @@ KoHashTable::KoHashTable()
   :koHashHistorySortedByLowBits(),
    koHistoryLastClearedBeginningMoveIdx(0)
 {
-  idxTable = new uint16_t[TABLE_SIZE];
+  idxTable = new uint32_t[TABLE_SIZE];
 }
 KoHashTable::~KoHashTable() {
   delete[] idxTable;
@@ -762,11 +762,12 @@ void KoHashTable::recompute(const BoardHistory& history) {
 
   std::sort(koHashHistorySortedByLowBits.begin(),koHashHistorySortedByLowBits.end(),cmpFirstByLowBits);
 
-  //Just in case, since we're using 16 bits for indices.
-  assert(koHashHistorySortedByLowBits.size() < 30000);
-  uint16_t size = (uint16_t)koHashHistorySortedByLowBits.size();
+  //Just in case, since we're using 32 bits for indices.
+  if(koHashHistorySortedByLowBits.size() > 1000000000)
+    throw StringError("Board history length longer than 1000000000, not supported");
+  uint32_t size = (uint32_t)koHashHistorySortedByLowBits.size();
 
-  uint16_t idx = 0;
+  uint32_t idx = 0;
   for(uint32_t bits = 0; bits<TABLE_SIZE; bits++) {
     while(idx < size && ((koHashHistorySortedByLowBits[idx].hash0 & TABLE_MASK) < bits))
       idx++;

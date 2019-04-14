@@ -59,7 +59,8 @@ Board::Board(const Board& other)
 void Board::init(int xS, int yS)
 {
   assert(IS_ZOBRIST_INITALIZED);
-  assert(xS <= MAX_LEN && yS <= MAX_LEN);
+  if(xS < 0 || yS < 0 || xS > MAX_LEN || yS > MAX_LEN)
+    throw StringError("Board::init - invalid board size");
 
   x_size = xS;
   y_size = yS;
@@ -146,6 +147,9 @@ int Board::getNumLiberties(Loc loc) const
 //Check if moving here would be a self-capture
 bool Board::isSuicide(Loc loc, Player pla) const
 {
+  if(loc == PASS_LOC)
+    return false;
+  
   Player opp = getOpp(pla);
   for(int i = 0; i < 4; i++)
   {
@@ -507,15 +511,18 @@ Board::MoveRecord Board::playMoveRecorded(Loc loc, Player pla)
   record.ko_loc = ko_loc;
   record.capDirs = 0;
 
-  Player opp = getOpp(pla);
-  for(int i = 0; i < 4; i++)
-  {
-    int adj = loc + adj_offsets[i];
-    if(colors[adj] == opp && getNumLiberties(adj) == 1)
-      record.capDirs |= (((uint8_t)1) << i);
+  if(loc != PASS_LOC) {
+    Player opp = getOpp(pla);
+    for(int i = 0; i < 4; i++)
+    {
+      int adj = loc + adj_offsets[i];
+      if(colors[adj] == opp && getNumLiberties(adj) == 1)
+        record.capDirs |= (((uint8_t)1) << i);
+    }
+    if(record.capDirs == 0 && isSuicide(loc,pla))
+      record.capDirs = 0x10;
   }
-  if(record.capDirs == 0 && isSuicide(loc,pla))
-    record.capDirs = 0x10;
+  
   playMoveAssumeLegal(loc, pla);
   return record;
 }
@@ -1287,6 +1294,7 @@ bool Board::searchIsLadderCapturedAttackerFirst2Libs(Loc loc, vector<Loc>& buf, 
 
   int numLibs = findLiberties(loc,buf,0,0);
   assert(numLibs == 2);
+  (void)numLibs; //Avoid warning when asserts are off
 
   Loc move0 = buf[0];
   Loc move1 = buf[1];
@@ -1420,16 +1428,16 @@ bool Board::searchIsLadderCaptured(Loc loc, bool defenderFirst, vector<Loc>& buf
       }
       else {
         moveListLen += findLiberties(loc,buf,start,start);
-        if(moveListLen != 2) {
-          cout << *this << endl;
-          cout << stackIdx << endl;
-          for(int i = 0; i<stackIdx; i++) {
-            cout << moveListCur[stackIdx] << " " << moveListStarts[stackIdx] << " " << moveListLens[stackIdx] << " "
-                 << Location::toString(buf[moveListStarts[stackIdx] + moveListCur[stackIdx]],*this) << endl;
-          }
-          cout << "===" << endl;
-          checkConsistency();
-        }
+        // if(moveListLen != 2) {
+        //   cout << *this << endl;
+        //   cout << stackIdx << endl;
+        //   for(int i = 0; i<stackIdx; i++) {
+        //     cout << moveListCur[stackIdx] << " " << moveListStarts[stackIdx] << " " << moveListLens[stackIdx] << " "
+        //          << Location::toString(buf[moveListStarts[stackIdx] + moveListCur[stackIdx]],*this) << endl;
+        //   }
+        //   cout << "===" << endl;
+        //   checkConsistency();
+        // }
         assert(moveListLen == 2);
 
         int libs0 = getNumImmediateLiberties(buf[start]);
@@ -2210,7 +2218,7 @@ Board Board::parseBoard(int xSize, int ySize, const string& s) {
       else if(c == 'x' || c == 'X')
         board.setStone(loc,P_BLACK);
       else
-        assert(false);
+        throw StringError(string("Board::parseBoard - could not parse board character: ") + c);
     }
   }
   return board;

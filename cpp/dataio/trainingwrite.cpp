@@ -305,7 +305,7 @@ void TrainingWriteBuffers::addRow(
       NNInputs::fillRowV5(board, hist, nextPlayer, data.drawEquivalentWinsForWhite, posLen, inputsUseNHWC, rowBin, rowGlobal);
     }
     else
-      assert(false);
+      ASSERT_UNREACHABLE;
 
     //Pack bools bitwise into uint8_t
     uint8_t* rowBinPacked = binaryInputNCHWPacked.data + curRows * numBinaryChannels * packedBoardArea;
@@ -682,6 +682,7 @@ void TrainingDataWriter::writeGame(const FinishedGameData& data) {
   assert(data.whiteValueTargetsByTurn.size() == numMoves+1);
 
   //Some sanity checks
+  #ifndef NDEBUG
   {
     const ValueTargets& lastTargets = data.whiteValueTargetsByTurn[data.whiteValueTargetsByTurn.size()-1];
     if(!data.endHist.isGameFinished)
@@ -698,6 +699,7 @@ void TrainingDataWriter::writeGame(const FinishedGameData& data) {
     assert(data.finalWhiteOwnership != NULL);
     assert(!data.endHist.isResignation);
   }
+  #endif
 
   Board board(data.startBoard);
   BoardHistory hist(data.startHist);
