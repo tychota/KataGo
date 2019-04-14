@@ -277,7 +277,10 @@ int MainCmds::gtp(int argc, const char* const* argv) {
     }
 
     else if(command == "name") {
-      response = "KataGo";
+      if (overrideVersion.size() > 0)
+        response = "Leela Zero";
+      else
+        response = "KataGo";
     }
 
     else if(command == "version") {
