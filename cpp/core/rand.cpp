@@ -677,9 +677,9 @@ rand.nextLogistic()
     double tinySubnormal = 4.9406564584124654e-324;
     double tinyNormal = 2.2250738585072014e-308;
     double maxDouble = 1.7976931348623157e308;
-    out << "pow(0.5,inf) " << pow(0.5, 1.0 / 0.0) << endl;
+    // out << "pow(0.5,inf) " << pow(0.5, 1.0 / 0.0) << endl;
     out << "pow(0.5,1e300) " << pow(0.5, 1.0e300) << endl;
-    out << "pow(1.0,inf) " << pow(1.0, 1.0 / 0.0) << endl;
+    // out << "pow(1.0,inf) " << pow(1.0, 1.0 / 0.0) << endl;
     out << "log(0) " << Global::doubleToString(log(0.0)) << endl;    
     out << "tinySubnormal " << Global::strprintf("%.10g",tinySubnormal) << endl;
     out << "tinyNormal " << Global::strprintf("%.10g",tinyNormal) << endl;
@@ -708,7 +708,7 @@ rand.nextLogistic()
     out << "rand.nextGamma(maxDouble)" << endl;
     for(int i = 0; i<8; i++) out << rand.nextGamma(maxDouble) << endl;
     out << "rand.nextGamma(inf)" << endl;
-    for(int i = 0; i<8; i++) out << rand.nextGamma(1.0/0.0) << endl;
+    // for(int i = 0; i<8; i++) out << rand.nextGamma(1.0/0.0) << endl;
 
     string expected = R"%%(
 pow(0.5,inf) 0

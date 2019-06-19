@@ -25,6 +25,8 @@ cpp/runwrite.sh
 
 cpp/program/gitinfo.h
 
+cpp/vendors
+
 data/
 versions/
 
