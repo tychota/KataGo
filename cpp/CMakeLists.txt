@@ -9,6 +9,20 @@ set(BOOST_INDLUDEDIR "C:/Users/XJY/.nuget/packages/boost/1.68.0/lib/native/inclu
 include_directories(external)
 include_directories(external/tclap-1.2.1/include)
 
+if(APPLE)
+  # Fix linking on 10.14+. See https://stackoverflow.com/questions/54068035
+  include_directories(/usr/local/include)
+  link_directories(/usr/local/lib)
+endif()
+
+if(NOT WIN32)
+  string(ASCII 27 Esc)
+  set(ColorReset   "${Esc}[m")
+  set(ColorBold    "${Esc}[1m")
+  set(ColorRed     "${Esc}[31m")
+  set(ColorBoldRed "${ColorRed}${ColorBold}")
+endif()
+
 #------------------------------------------------------------------------------------
 
 if(BUILD_WRITE)
@@ -24,9 +38,9 @@ if(BUILD_MCTS)
     set(CMAKE_CUDA_FLAGS
       "-gencode arch=compute_30,code=sm_30 -gencode arch=compute_30,code=compute_30 -gencode arch=compute_37,code=sm_37 -gencode arch=compute_53,code=sm_53 -gencode arch=compute_53,code=compute_53 -gencode arch=compute_70,code=sm_70 -gencode arch=compute_70,code=compute_70"
       )
-
   else()
-    message(FATAL_ERROR "Please specify -DUSE_CUDA_BACKEND=1 (right now CUDA the only option, but in the future there may be others)")
+    message(WARNING "${ColorBoldRed}WARNING: Using dummy neural net backend, intended for non-neural-net testing only, will fail on any code path requiring a neural net. Specify -DUSE_CUDA_BACKEND=1 to compile with CUDA to use neural net.${ColorReset}")
+    set(NEURALNET_BACKEND_SOURCES neuralnet/dummybackend.cpp)
   endif()
 endif()
 
@@ -42,6 +56,25 @@ endif()
 # find_package(Gperftools REQUIRED)
 
 #------------------------------------------------------------------------------------
+# delete ?
+find_package(Git)
+set(GIT_HEADER_FILE_TEMPLATE_BARE program/gitinfotemplate.h)
+set(GIT_HEADER_FILE_ALWAYS_UPDATED_BARE program/gitinfoupdated.h)
+set(GIT_HEADER_FILE_BARE program/gitinfo.h)
+set(GIT_HEADER_FILE_TEMPLATE ${CMAKE_SOURCE_DIR}/${GIT_HEADER_FILE_TEMPLATE_BARE})
+set(GIT_HEADER_FILE_ALWAYS_UPDATED ${CMAKE_BINARY_DIR}/${GIT_HEADER_FILE_ALWAYS_UPDATED_BARE})
+set(GIT_HEADER_FILE ${CMAKE_BINARY_DIR}/${GIT_HEADER_FILE_BARE})
+
+add_custom_command(
+  OUTPUT ${GIT_HEADER_FILE_ALWAYS_UPDATED}
+  COMMAND ${CMAKE_COMMAND} -E copy ${GIT_HEADER_FILE_TEMPLATE} ${GIT_HEADER_FILE_ALWAYS_UPDATED}
+  COMMAND ${GIT_EXECUTABLE} describe --match=DummyTagNotExisting --always --abbrev=40 --dirty >> ${GIT_HEADER_FILE_ALWAYS_UPDATED}
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GIT_HEADER_FILE_ALWAYS_UPDATED} ${GIT_HEADER_FILE}
+  COMMAND ${CMAKE_COMMAND} -E remove ${GIT_HEADER_FILE_ALWAYS_UPDATED}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  VERBATIM
+  )
+# end delete ?
 
 #------------------------------------------------------------------------------------
 
@@ -69,7 +102,8 @@ if(BUILD_WRITE)
     dataio/datapool.cpp
     dataio/lzparse.cpp
     dataio/sgf.cpp
-    program/gitinfoupdated.h
+    # program/gitinfoupdated.h
+    ${GIT_HEADER_FILE_ALWAYS_UPDATED}
     write.cpp
     )
 
@@ -93,6 +127,7 @@ endif()
 if(BUILD_MCTS)
   add_executable(main
     core/global.cpp
+    core/config.cpp
     core/config_parser.cpp
     core/elo.cpp
     core/fancymath.cpp
@@ -100,8 +135,12 @@ if(BUILD_MCTS)
     core/logger.cpp
     core/makedir.cpp
     core/md5.cpp
+    core/multithread.cpp
     core/rand.cpp
+    core/rand_helpers.cpp
     core/sha2.cpp
+    core/test.cpp
+    core/threadsafequeue.cpp
     core/timer.cpp
     game/board.cpp
     game/rules.cpp
@@ -114,6 +153,7 @@ if(BUILD_MCTS)
     neuralnet/nninputs.cpp
     neuralnet/modelversion.cpp
     neuralnet/nneval.cpp
+    neuralnet/desc.cpp
     ${NEURALNET_BACKEND_SOURCES}
     search/timecontrols.cpp
     search/searchparams.cpp
@@ -124,15 +164,18 @@ if(BUILD_MCTS)
     search/analysisdata.cpp
     program/setup.cpp
     program/play.cpp
-	program/gitinfoupdated.h
+    # program/gitinfoupdated.h
+    ${GIT_HEADER_FILE_ALWAYS_UPDATED}
     tests/testboardarea.cpp
     tests/testboardbasic.cpp
     tests/testrules.cpp
     tests/testscore.cpp
+    tests/testsgf.cpp
     tests/testnninputs.cpp
     tests/testsearch.cpp
     tests/testtime.cpp
     tests/testtrainingwrite.cpp
+    tests/testnn.cpp
     evalsgf.cpp
     gatekeeper.cpp
     gtp.cpp
@@ -171,6 +214,14 @@ if(BUILD_MCTS)
   if(USE_TCMALLOC)
     target_link_libraries(main ${TCMALLOC_LIB})
   endif(USE_TCMALLOC)
+
+  # On g++ it seems like we need to explicitly link threads as well.
+  # It seems sometimes this is implied by other options automatically like when we enable CUDA, but we get link errors
+  # if we don't explicitly require threads it when attempting to build without CUDA
+  if(CMAKE_COMPILER_IS_GNUCC AND (NOT USE_CUDA_BACKEND))
+    find_package (Threads REQUIRED)
+    target_link_libraries(main Threads::Threads)
+  endif()
 
 endif()
 
