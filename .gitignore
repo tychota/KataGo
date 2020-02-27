@@ -57,3 +57,6 @@ cmake_install.cmake
 GPATH
 GRTAGS
 GTAGS
+
+# Build
+cpp/cmake-build-*
