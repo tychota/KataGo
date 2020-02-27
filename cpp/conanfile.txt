@@ -1,0 +1,11 @@
+[requires]
+libzip/1.4.0@bincrafters/stable
+boost/1.70.0@conan/stable
+bzip2/1.0.6@conan/stable
+zlib/1.2.11@conan/stable
+dirent/1.23.2
+
+cpr/1.3.0
+
+[generators]
+cmake

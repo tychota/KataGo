@@ -1,10 +1,7 @@
 #include "../dataio/numpywrite.h"
 
 #include <cstring>
-
-#ifndef NO_LIBZIP
 #include <zip.h>
-#endif
 
 using namespace std;
 
@@ -236,34 +233,6 @@ template struct NumpyBuffer<int16_t>;
 template struct NumpyBuffer<int32_t>;
 template struct NumpyBuffer<int64_t>;
 
-#ifdef NO_LIBZIP
-
-static void throwZipError() {
-  throw StringError("KataGo was built without libzip library, unable to create zip file or write training data");
-}
-
-ZipFile::ZipFile(const string& fName)
-  :fileName(fName),file(NULL)
-{
-  throwZipError();
-}
-
-ZipFile::~ZipFile() {
-}
-
-void ZipFile::writeBuffer(const char* nameWithinZip, void* data, uint64_t numBytes) {
-  (void)nameWithinZip;
-  (void)data;
-  (void)numBytes;
-  throwZipError();
-}
-
-void ZipFile::close() {
-  throwZipError();
-}
-
-#else
-
 struct ZipError {
   zip_error_t value;
   ZipError() { zip_error_init(&value); }
@@ -318,19 +287,3 @@ void ZipFile::close() {
   else
     file = NULL;
 }
-
-#endif
-
-// void test() {
-//   string fileName = "abc.npz";
-
-//   NumpyBuffer<float> np({4,3,4});
-//   for(int i = 0; i<2*3*4; i++)
-//     np.data[i] = 0.1*i;
-
-//   uint64_t npBytes = np.prepareHeaderWithNumRows(2);
-
-//   ZipFile zipFile(fileName);
-//   zipFile.writeBuffer("nptest",np.dataIncludingHeader,npBytes);
-//   zipFile.close();
-// }
