@@ -83,10 +83,7 @@ else()
   message(FATAL_ERROR "Unrecognized backend: " ${USE_BACKEND})
 endif()
 
-if((NOT BUILD_WRITE) AND (NOT BUILD_MCTS))
-  message(FATAL_ERROR "Please specify one or more of -DBUILD_WRITE=1 or -DBUILD_MCTS=1")
-endif()
-
+find_package(OpenSSL REQUIRED)
 
 #--------------------------- TCMALLOC ----------------------------------------------------------------------------------
 
@@ -273,10 +270,7 @@ if(USE_TCMALLOC)
   target_link_libraries(katago ${TCMALLOC_LIB})
 endif(USE_TCMALLOC)
 
-if(USE_DISTRIBUTED)
-  message("-DUSE_DISTRIBUTED=1 is set, compiling code and dependencies to contribute to distributed_effort")
-  target_link_libraries(katago {CONAN_LIBS})
-endif()
+target_link_libraries(katago ${OPENSSL_SSL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARIES})
 
 #------------------------------------------------------------------------------------
 
